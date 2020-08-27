@@ -1,0 +1,416 @@
+---
+title: "Prova - Séries Temporais"
+output:
+  html_document:
+    toc: true
+    toc_depth: 5
+    toc_float: TRUE
+---
+
+<html>
+<body>
+<style>
+
+h1.title {
+  display: none;
+}
+
+div.a {
+	text-align: center;
+}
+
+</style>
+
+<div class="a">
+
+<font color="white"><p> . </p></font>
+
+# Séries Temporais
+#### Kaíque Ferreira Ferreira Henrique de Souza
+#### <b> Prova de Séries Temporais <b>
+##### 27 de Agosto de 2020
+
+<font color="white"><p> . </p></font>
+
+</div>
+
+
+```{r setup, echo = FALSE, warning = FALSE, message=FALSE}
+# Carregando Bibliotecas
+
+library(tidyverse)
+library(ggpmisc)
+library(httr)
+#library(xlsx)
+library(readxl)
+library(forecast)
+# Pacote para %<>%
+library(magrittr)
+
+# Pacote para gráfico ggplot2
+#library(devtools)
+#install_github("thomasp85/patchwork")
+library(patchwork)
+
+
+# seta o tema default
+theme_set(theme_classic())
+
+```
+
+
+```{r, echo = FALSE, warning = FALSE, message=FALSE}
+
+# Carregando dados Manchas Solares
+url = 'https://www.ime.usp.br/~pam/MANCHAS.XLS'
+a = GET(url, write_disk( tf <- tempfile(fileext = ".xls")))
+Dados_MS =  as_tibble(read_excel(tf))
+```
+
+
+
+# Análise Descritiva
+
+## Gráfico da Série
+
+<hr/>
+
+Nesse gráfico abaixo conseguimos ver de forma gráfica o conjunto de dados referente ao número de manchas solares de Wolfer nas seguintes variáveis:
+
+- Número de manchas solares total anual
+- Data: De 1749 a 1924
+
+```{r, echo = FALSE, warning = FALSE, message=FALSE}
+ggplot(Dados_MS, aes(x = Ano, y = manchas)) + geom_path()
+```
+
+## Subsérie Manchas
+
+<hr/>
+
+
+
+O trecho abaixo foi retirado do seguinte  [artigo](https://www.scielo.br/scielo.php?pid=S1806-11172003000200004&script=sci_arttext) no site SciELO.
+
+_"As características mais claras da variabilidade solar são as mudanças com o tempo no número de manchas solares vistas na metade visível do Sol (Stuiver e Quay, 1980). Os registros observados do número de manchas solares mostram um [ciclo regular médio da atividade solar próximo dos 11 anos](). Não existe ainda uma explicação física completa para a observação do ciclo solar (Eddy, 1976). Modernas teorias atribuem as características periódicas das manchas solares à existência de um dínamo solar em que a convecção e a rotação diferencial da superfície interagem para amplificar e manter um assumido campo magnético inicial (Leighton, 1969). Modelos de dínamo são bem sucedidos na reprodução de [certas características do ciclo de 11 anos, mas ainda não é possível explicar a variação de amplitude nas épocas de máximo e de outras mudanças características de longo período (Eddy, 1976)]()."_
+
+
+```{r, warning = FALSE, message=FALSE}
+
+ggplot(Dados_MS, aes(x = Ano, y = manchas)) + geom_path() +
+  geom_vline(xintercept = c(seq(1755,1925,11)), colour = "blue")
+
+```
+
+Serão considerados os anos de 1755 até 1923, realizando a previsão utilizando os últimos 10 anos
+
+```{r, echo = FALSE, warning = FALSE, message=FALSE}
+ggplot(Dados_MS, aes(x = Ano, y = manchas)) +
+  geom_path()+ 
+  geom_vline(xintercept = c(1755, 1913, 1923 ), colour = "red")
+```
+
+## Autocorrelação
+
+<hr/>
+
+Abaixo podemos avaliar o gráfico de autocorrelação da série original
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Organizando dados
+Dados_MS %<>%
+  filter(Ano > 1754) %>% 
+  filter(Ano < 1924)
+
+
+Dados_MS_Treino = Dados_MS %>%
+  filter(Ano < 1914)
+
+Dados_MS_Teste = Dados_MS %>%
+  filter(Ano > 1913)
+
+Dados_MS_ts = ts(Dados_MS$manchas, frequency = 1, start=c(1755), end = c(1923))
+Dados_MS_Treino_ts = ts(Dados_MS_Treino$manchas, frequency = 1, start=c(1755), end = c(1913))
+
+
+g1 = acf(Dados_MS_Treino_ts, lag.max=36)
+g1
+```
+
+
+## Autocorrelação Parcial
+
+<hr/>
+
+Abaixo podemos avaliar o gráfico de autocorrelação parcial da série original
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+g4 = pacf(Dados_MS_Treino_ts, lag.max=36)
+g4
+```
+## Box-Cox
+
+<hr/>
+
+Abaixo vemos o gráfico dos dados de manchas solares antes e após a transformação Box-Cox
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Organizando dados
+
+lambda = BoxCox.lambda(Dados_MS$manchas)
+
+Dados_MS_BC = BoxCox(Dados_MS$manchas, lambda)
+
+Dados_MS_BC_Treino = Dados_MS_BC[1:159]
+Dados_MS_BC_Teste  = Dados_MS_BC[160:169]
+
+Dados_MS_BC_ts = ts(Dados_MS_BC, frequency = 1, start=c(1755), end = c(1924))
+Dados_MS_Treino_BC_ts = ts(Dados_MS_BC_Treino, frequency = 1, start=c(1755), end = c(1913))
+
+g11 = ggplot(Dados_MS, aes(x = Ano, y = manchas)) +
+  geom_path()+ 
+  geom_vline(xintercept = c(1755, 1913, 1923 ), colour = "red") +
+  labs(x = 'Ano', y = 'Manchas', title = 'Dados originais')
+
+g22 = autoplot(Dados_MS_BC_ts)+ 
+  geom_vline(xintercept = c(1755, 1913, 1923 ), colour = "red") +
+  labs(x = 'Ano', y = 'Manchas', title = 'Com transformação Box-Cox')
+
+g11 / g22
+```
+
+
+## Diferenciação
+
+<hr/>
+
+Para tentar melhorar os resultados ao aplicar um modelo de séries temporais vamos diferenciar a série de manchas e avaliar novamente as autocorrelações
+
+### Autocorrelação
+
+<hr/>
+
+Podemos análisar a autocorrelação da série após uma diferenciação $(1 - B^{12})Z_t$
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Dados_df = diff(Dados_MS_Treino_BC_ts,d=1, lag = 1)
+
+g2 = acf(Dados_df, lag.max=36)
+g2
+```
+
+
+### Autocorrelação Parcial
+
+<hr/>
+
+Podemos analisar a autocorrelação parcial da série após uma diferenciação $(1 - B^{12})Z_t$
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+g5 = pacf(Dados_df, lag.max=36)
+g5
+```
+### Autocorrelações
+
+<hr/>
+
+Abaixo podemos comparar os resultados entre as autocorrelações
+
+```{r, echo= FALSE, warning=FALSE, message=FALSE}
+(g1 %>% autoplot()| g2 %>% autoplot() ) / (g4%>% autoplot() | g5%>% autoplot() )
+```
+
+# Auto-arima
+
+<hr/>
+
+Vamos utilizar a função _auto.arima_ para encontrar um primeiro modelo sugerido e assim fazer os testes de diagnósticos para avaliar seu ajuste em relação à série dos dados
+
+```{r, echo= FALSE, warning=FALSE, message=FALSE}
+
+mod.auto =  auto.arima(Dados_MS_Treino_BC_ts, d=1,  trace = F)
+
+summary(mod.auto)
+```
+
+Percebemos que esse é o modelo indicado pelo _auto.arima_
+
+$$
+(1-\phi_1B^1-\phi_2B^2-\phi_3B^3)(1-B)^{1}Z_t^{*}=(1-\theta_1B^1)a_t
+$$
+
+## Diagnostico
+
+<hr/>
+
+Vamos realizar testes de diagnósticos para avaliar o modelo sugerido pelo _auto.arima_ através dos gráficos de autocorrelação e de autocorrelação parcial e também com o teste Ljung-Box
+
+### Autocorrelação
+
+<hr/>
+
+Podemos analisar a autocorrelação da série para o modelo sugerido pelo _auto.arima_
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+mod.auto$residuals %>% acf(.,36)
+```
+
+### Autocorrelação Parcial
+
+<hr/>
+
+Podemos analisar a autocorrelação parcial da série para o modelo sugerido pelo _auto.arima_
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+mod.auto$residuals %>% pacf(.,36)
+```
+
+### Teste Ljung-Box
+
+<hr/>
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+checkresiduals(mod.auto, lag = 24, plot = F)
+checkresiduals(mod.auto, lag = 30, plot = F)
+checkresiduals(mod.auto, lag = 35, plot = F)
+```
+## Medidas de Acurácia
+
+<hr/>
+
+Podemos observar que existe muito pouca diferença entre as métricas de erro para os dados de treino em relação aos dados de teste. Podemos dizer que o modelo tem uma boa capacidade para prever dados futuros que não foram utilizados no ajuste.
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+accuracy = accuracy( forecast(mod.auto, h=10), Dados_MS_BC_Teste)
+
+accuracy
+```
+### EQM
+
+<hr/>
+
+Com o modelo apresentado obtemos um EQM de:
+
+```{r, message=FALSE, warning=FALSE}
+accuracy[2,"RMSE"]^2
+```
+
+# Modelo 2
+
+<hr/>
+
+Depois de varias tentativa de encontrar um melhor modelo para prever os últimos 10 anos com um MAPE sendo o menor possível encontrei um ARMA(6,5) para os dados com transformação Box-Cox
+
+$$
+(1-\phi_1B^1-\phi_2B^2-\phi_3B^3-\phi_4B^4-\phi_5B^5-\phi_6B^6)Z_t^{*}=(1-\theta_1B^1-\theta_2B^2-\theta_3B^3-\theta_4B^4-\theta_5B^5)a_t
+$$
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+mod2 = arima(Dados_MS_Treino_BC_ts, order = c(6,0,5))
+
+```
+
+## Diagnostico Modelo 2
+
+<hr/>
+
+Vamos realizar testes de diagnósticos para avaliar o modelo ARMA(6,5) através dos gráficos de autocorrelação e de autocorrelação parcial e também com o teste Ljung-Box
+
+### Autocorrelação
+
+<hr/>
+
+Podemos analisar a autocorrelação da série para o modelo ARMA(6,5)
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+mod2$residuals %>% acf(.,36)
+```
+
+### Autocorrelação Parcial
+
+<hr/>
+
+Podemos analisar a autocorrelação parcial da série para o modelo ARMA(6,5)
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+mod2$residuals %>% pacf(.,24)
+```
+
+### Teste Ljung-Box
+
+<hr/>
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+checkresiduals(mod2, lag = 24, plot = F)
+checkresiduals(mod2, lag = 30, plot = F)
+checkresiduals(mod2, lag = 36, plot = F)
+```
+
+## Previsão
+
+<hr/>
+
+Vamos fazer a previsão dos dados da série de manchas solares para os últimos 10 anos
+
+### Observado e Preditos
+
+<hr/>
+
+```{r, warning = F, message = F, fig.width = 8}
+horizonte = 10
+reps <- rep(NA, length(Dados_MS_Treino_BC_ts))
+
+df_pred <- tibble(observado = Dados_MS_Treino_BC_ts,
+                  predito = reps,
+                  lo_80 = reps,
+                  hi_80 = reps,
+                  lo_95 = reps,
+                  hi_95 = reps) %>% 
+  bind_rows(
+    forecast(mod2, h = horizonte) %>% 
+      as_tibble() %>% 
+      mutate(observado = Dados_MS_BC_Teste) %>% 
+      rename(predito = `Point Forecast`, lo_80 = `Lo 80`, hi_80 = `Hi 80`, lo_95 = `Lo 95`, hi_95 = `Hi 95`) %>%
+      select(observado, predito, everything())
+  ) %>% 
+  mutate(data = Dados_MS$Ano)
+  
+
+df_pred %>% 
+  pivot_longer(c(observado, predito)) %>% 
+  ggplot(aes(x = data, y = value, color = name)) +
+  geom_ribbon(aes(ymin = lo_80, ymax = hi_80), color = '#e8d5f9', alpha = 0.2) +
+  geom_ribbon(aes(ymin = lo_95, ymax = hi_95), color = '#c495f0', alpha = 0.2) +
+  geom_line() +
+  scale_color_manual('Dados', values = c('#6495ED', '#FF4500')) +
+  labs(x = 'Ano', y = 'Manchas', title = 'Predizendo os últimos 10 anos')
+
+```
+
+### Medidas de Acurácia
+
+<hr/>
+
+Podemos observar que existe muito pouca diferença entre as métricas de erro para os dados de treino em relação aos dados de teste. Podemos dizer que o modelo tem uma boa capacidade para prever dados futuros que não foram utilizados no ajuste.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+accuracy = accuracy( forecast(mod2, h=10), Dados_MS_BC_Teste)
+
+accuracy
+```
+
+#### EQM
+
+<hr/>
+
+Com o último modelo apresentado obtemos um EQM de:
+
+```{r, message=FALSE, warning=FALSE}
+accuracy[2,"RMSE"]^2
+```
